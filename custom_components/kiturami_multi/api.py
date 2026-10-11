@@ -72,8 +72,9 @@ class KrbClient:
         retry_auth: bool = True,
     ) -> dict[str, Any]:
         headers = {"Content-Type": "application/json; charset=UTF-8"}
-        if authenticated and self.auth_key:
-            headers["AUTH-KEY"] = self.auth_key
+        # Multi Manager's OkHttp interceptor sends this header on every request,
+        # including login where its value is an empty string.
+        headers["AUTH-KEY"] = self.auth_key if authenticated else ""
 
         try:
             if self._session is not None:
@@ -107,19 +108,49 @@ class KrbClient:
             raise KrbConnectionError(
                 "귀뚜라미 서버가 예상하지 못한 응답을 반환했습니다"
             )
-        code = result.get("code")
+        # The API uses responseCode/responseMessage for normal responses, but
+        # code/message for malformed requests and some gateway errors.
+        code = result.get("responseCode", result.get("code"))
         if code not in (None, 100, 200, "100", "200"):
-            message = result.get("message") or f"API 오류 코드 {code}"
+            message = (
+                result.get("responseMessage")
+                or result.get("errorMessage")
+                or result.get("message")
+                or f"API 오류 코드 {code}"
+            )
+            _LOGGER.warning(
+                "Kiturami API rejected %s: code=%s message=%s",
+                path,
+                code,
+                message,
+            )
+            if authenticated and retry_auth and str(code) in {"101", "102", "103"}:
+                await self.async_login()
+                return await self._async_post(path, payload, retry_auth=False)
             raise KrbError(str(message))
         return result
 
     async def async_login(self) -> str:
         """Authenticate using the request fields used by Multi Manager."""
         password_hash = hashlib.sha256(self._password.encode("utf-8")).hexdigest()
+        # GsonBuilder.serializeNulls() is used by Multi Manager 2.8.4. Keep the
+        # complete MemberModel shape so the request matches the app exactly.
+        payload = {
+            "appcode": None,
+            "emailAddress": None,
+            "memberRole": None,
+            "mobileNumber": None,
+            "newPassword": None,
+            "nickname": None,
+            "password": password_hash,
+            "pushToken": None,
+            "userIdentifier": self.username,
+            "userName": None,
+        }
         try:
             result = await self._async_post(
                 "member/login",
-                {"userIdentifier": self.username, "password": password_hash},
+                payload,
                 authenticated=False,
                 retry_auth=False,
             )
@@ -131,7 +162,16 @@ class KrbClient:
         if not auth_key and isinstance(result.get("data"), dict):
             auth_key = result["data"].get("authenticationKey")
         if not auth_key:
-            message = result.get("message") or "아이디 또는 비밀번호를 확인하세요"
+            message = (
+                result.get("responseMessage")
+                or result.get("errorMessage")
+                or result.get("message")
+                or "아이디 또는 비밀번호를 확인하세요"
+            )
+            _LOGGER.warning(
+                "Kiturami login response did not contain an authentication key: %s",
+                message,
+            )
             raise KrbAuthError(str(message))
         self.auth_key = str(auth_key)
         return self.auth_key

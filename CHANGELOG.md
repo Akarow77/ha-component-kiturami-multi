@@ -2,6 +2,12 @@
 
 이 프로젝트는 Semantic Versioning을 따릅니다.
 
+## 0.1.1
+
+- 멀티 매니저 2.8.4와 동일한 로그인 요청 본문 및 `AUTH-KEY` 헤더 사용
+- API의 `responseCode`/`responseMessage` 오류 형식 처리
+- 계정정보를 노출하지 않는 로그인 실패 진단 로그 추가
+
 ## 0.1.0
 
 - 귀뚜라미 IoT 멀티 매니저 계정 로그인
