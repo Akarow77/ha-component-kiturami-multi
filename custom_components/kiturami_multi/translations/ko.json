@@ -1,0 +1,24 @@
+{
+  "title": "귀뚜라미 IoT 멀티 매니저",
+  "config": {
+    "abort": {
+      "already_configured": "이 계정은 이미 구성되어 있습니다."
+    },
+    "error": {
+      "invalid_auth": "아이디 또는 비밀번호를 확인해 주세요.",
+      "cannot_connect": "귀뚜라미 서버에 연결할 수 없습니다.",
+      "no_rooms": "계정에서 각방 조절기를 찾지 못했습니다."
+    },
+    "step": {
+      "user": {
+        "title": "IoT 멀티 매니저 연결",
+        "description": "귀뚜라미 IoT 멀티 매니저 앱의 계정을 입력하세요.",
+        "data": {
+          "username": "아이디",
+          "password": "비밀번호",
+          "scan_interval": "동기화 간격 (분)"
+        }
+      }
+    }
+  }
+}

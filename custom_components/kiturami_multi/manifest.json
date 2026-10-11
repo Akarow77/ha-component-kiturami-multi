@@ -1,0 +1,12 @@
+{
+  "domain": "kiturami_multi",
+  "name": "귀뚜라미 IoT 멀티 매니저",
+  "codeowners": ["@Akarow77"],
+  "config_flow": true,
+  "documentation": "https://github.com/Akarow77/ha-component-kiturami-multi",
+  "dependencies": [],
+  "requirements": [],
+  "iot_class": "cloud_polling",
+  "version": "0.1.0",
+  "issue_tracker": "https://github.com/Akarow77/ha-component-kiturami-multi/issues"
+}

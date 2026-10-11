@@ -1,0 +1,6 @@
+{
+  "name": "[KR] 귀뚜라미 IoT 멀티 매니저",
+  "country": "KR",
+  "domains": ["climate"],
+  "render_readme": true
+}
