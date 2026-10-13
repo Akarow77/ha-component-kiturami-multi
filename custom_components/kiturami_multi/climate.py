@@ -108,8 +108,10 @@ class KituramiRoomClimate(ClimateEntity):
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
-        if self.hvac_mode == HVACMode.OFF:
-            await self._api.async_turn_on(self._room.node_id, self._room.room_id)
+        # The 0102 command used by Multi Manager applies heat mode and the
+        # target temperature together. Sending a separate power-on command
+        # immediately before it can make the controller drop the second
+        # request.
         await self._api.async_set_temperature(
             self._room.node_id, self._room.room_id, float(temperature)
         )
