@@ -224,6 +224,15 @@ def temperature_from_hex(value: Any) -> float:
     return float(int(text, 16))
 
 
+def heating_demand(
+    current_temperature: float | None, target_temperature: float | None
+) -> bool | None:
+    """Estimate thermostat heat demand from current and target temperatures."""
+    if current_temperature is None or target_temperature is None:
+        return None
+    return current_temperature < target_temperature
+
+
 def power_action(room_id: str, enabled: bool) -> tuple[str, str]:
     """Return action id/data for per-room power."""
     state = "01" if enabled else "02"

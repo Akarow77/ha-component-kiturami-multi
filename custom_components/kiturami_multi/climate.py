@@ -9,7 +9,11 @@ from enum import StrEnum
 from typing import Any
 
 from homeassistant.components.climate import ClimateEntity
-from homeassistant.components.climate.const import ClimateEntityFeature, HVACMode
+from homeassistant.components.climate.const import (
+    ClimateEntityFeature,
+    HVACAction,
+    HVACMode,
+)
 from homeassistant.const import ATTR_TEMPERATURE, CONF_SCAN_INTERVAL, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import PlatformNotReady
@@ -19,7 +23,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import KituramiConfigEntry
 from .api import KrbAPI, KrbError
 from .const import DOMAIN, MAX_TEMP, MIN_TEMP, MODEL, TITLE
-from .protocol import RoomDevice, temperature_from_hex
+from .protocol import RoomDevice, heating_demand, temperature_from_hex
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,6 +83,7 @@ class KituramiRoomClimate(ClimateEntity):
         self._attr_unique_id = f"{DOMAIN}-{safe_node}-{device.room_id}"
         self._attr_name = device.name
         self._attr_available = False
+        self._attr_hvac_action = HVACAction.OFF
         self._attr_hvac_mode = HVACMode.OFF
         self._attr_preset_mode = PresetMode.HEAT
         self._attr_device_info = DeviceInfo(
@@ -111,6 +116,7 @@ class KituramiRoomClimate(ClimateEntity):
         self._attr_hvac_mode = HVACMode.HEAT
         self._attr_preset_mode = PresetMode.HEAT
         self._attr_target_temperature = float(temperature)
+        self._update_hvac_action()
         self.async_write_ha_state()
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
@@ -123,6 +129,7 @@ class KituramiRoomClimate(ClimateEntity):
         else:
             raise ValueError(f"지원하지 않는 각방 모드: {preset_mode}")
         self._attr_preset_mode = preset_mode
+        self._update_hvac_action()
         self.async_write_ha_state()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
@@ -133,7 +140,20 @@ class KituramiRoomClimate(ClimateEntity):
         else:
             raise ValueError(f"지원하지 않는 HVAC 모드: {hvac_mode}")
         self._attr_hvac_mode = hvac_mode
+        self._update_hvac_action()
         self.async_write_ha_state()
+
+    def _update_hvac_action(self) -> None:
+        """Expose the same heat-demand estimate used by Multi Manager."""
+        if self._attr_hvac_mode == HVACMode.OFF:
+            self._attr_hvac_action = HVACAction.OFF
+            return
+        if heating_demand(
+            self._attr_current_temperature, self._attr_target_temperature
+        ):
+            self._attr_hvac_action = HVACAction.HEATING
+            return
+        self._attr_hvac_action = HVACAction.IDLE
 
     async def async_update(self) -> None:
         now = datetime.datetime.now(datetime.UTC)
@@ -184,3 +204,4 @@ class KituramiRoomClimate(ClimateEntity):
                 self._attr_target_temperature = temperature_from_hex(target)
         except TypeError, ValueError:
             _LOGGER.debug("온도 응답을 해석하지 못했습니다: %s", result)
+        self._update_hvac_action()

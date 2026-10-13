@@ -117,6 +117,12 @@ class ProtocolTest(unittest.TestCase):
         self.assertEqual("18", encoded)
         self.assertEqual(24.0, protocol.temperature_from_hex(encoded))
 
+    def test_heating_demand(self):
+        self.assertTrue(protocol.heating_demand(20, 22))
+        self.assertFalse(protocol.heating_demand(22, 22))
+        self.assertFalse(protocol.heating_demand(23, 22))
+        self.assertIsNone(protocol.heating_demand(None, 22))
+
     def test_mode_info_selects_requested_room(self):
         payload = {
             "detailItemList": [
