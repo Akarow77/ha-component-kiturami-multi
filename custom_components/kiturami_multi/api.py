@@ -13,7 +13,9 @@ from .const import KITURAMI_API_URL
 from .protocol import (
     RoomDevice,
     away_action,
+    device_nodes_from_response,
     indoor_heat_action,
+    legacy_room_devices_from_response,
     mode_info_from_response,
     power_action,
     room_devices_from_response,
@@ -200,11 +202,30 @@ class KrbClient:
 
     async def async_get_room_devices(self) -> list[RoomDevice]:
         """Return all room controllers registered to the account."""
-        result = await self._async_post(
-            "member/getMemberEachRoomDeviceList",
-            {"parentCode": "1"},
+        if self.login_scheme != "legacy":
+            result = await self._async_post(
+                "member/getMemberEachRoomDeviceList",
+                {"parentCode": "1"},
+            )
+            devices = room_devices_from_response(result)
+            if devices:
+                return devices
+
+        # Legacy multi-room accounts first return controller nodes, then expose
+        # the attached rooms through getDeviceInfo for each node.
+        member_result = await self._async_post(
+            "member/getMemberDeviceList",
+            {"parentId": "1"},
         )
-        return room_devices_from_response(result)
+        nodes = device_nodes_from_response(member_result)
+        legacy_devices: list[RoomDevice] = []
+        for node in nodes:
+            detail = await self._async_post(
+                "device/getDeviceInfo",
+                {"nodeId": node.node_id, "parentId": node.parent_id},
+            )
+            legacy_devices.extend(legacy_room_devices_from_response(detail, node))
+        return legacy_devices
 
 
 class KrbAPI:
@@ -233,27 +254,37 @@ class KrbAPI:
         room_id: str,
         command_id: str = "0102",
     ) -> dict[str, Any]:
+        payload = {
+            "parentId": parent_id,
+            "nodeId": node_id,
+            "slaveId": room_id,
+            "commandId": command_id,
+        }
+        if self.client.login_scheme == "legacy":
+            payload.pop("commandId")
+            payload["actionId"] = command_id
         result = await self.client._async_post(
             "device/getDeviceModeInfo",
-            {
-                "parentId": parent_id,
-                "nodeId": node_id,
-                "slaveId": room_id,
-                "commandId": command_id,
-            },
+            payload,
         )
         return mode_info_from_response(result, room_id)
 
     async def async_device_control(
         self, node_id: str, action_id: str, action_data: str
     ) -> dict[str, Any]:
+        payload = {
+            "nodeIds": [node_id],
+            "actionID": action_id,
+            "actionData": action_data,
+        }
+        if self.client.login_scheme == "legacy":
+            payload.pop("actionID")
+            payload.pop("actionData")
+            payload["messageId"] = action_id
+            payload["messageBody"] = action_data
         return await self.client._async_post(
             "device/deviceControl",
-            {
-                "nodeIds": [node_id],
-                "actionID": action_id,
-                "actionData": action_data,
-            },
+            payload,
         )
 
     async def async_turn_on(self, node_id: str, room_id: str) -> None:

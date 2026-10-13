@@ -47,6 +47,31 @@ class ProtocolTest(unittest.TestCase):
         self.assertEqual("01", devices[0].room_id)
         self.assertEqual("우리집 (각방 01)", devices[0].name)
 
+    def test_legacy_multiroom_discovery(self):
+        member_payload = {
+            "memberDeviceList": [
+                {
+                    "parentId": "1",
+                    "nodeId": "legacy-node",
+                    "deviceAlias": "우리집",
+                }
+            ]
+        }
+        nodes = protocol.device_nodes_from_response(member_payload)
+        self.assertEqual(1, len(nodes))
+
+        detail_payload = {
+            "deviceSlaveInfo": [
+                {"slaveId": "01", "alias": "거실"},
+                {"slaveId": "02", "alias": "안방"},
+            ]
+        }
+        devices = protocol.legacy_room_devices_from_response(detail_payload, nodes[0])
+
+        self.assertEqual(["01", "02"], [device.room_id for device in devices])
+        self.assertEqual(["거실", "안방"], [device.name for device in devices])
+        self.assertTrue(all(device.node_id == "legacy-node" for device in devices))
+
     def test_power_action(self):
         self.assertEqual(("0101", "030000000001"), protocol.power_action("03", True))
         self.assertEqual(("0101", "030000000002"), protocol.power_action("03", False))

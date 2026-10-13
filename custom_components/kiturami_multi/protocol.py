@@ -18,6 +18,15 @@ class RoomDevice:
     device_name: str
 
 
+@dataclass(frozen=True)
+class DeviceNode:
+    """A boiler/controller node returned before its room list is requested."""
+
+    parent_id: str
+    node_id: str
+    name: str
+
+
 def _first_text(source: Mapping[str, Any], *keys: str) -> str | None:
     for key in keys:
         value = source.get(key)
@@ -42,6 +51,87 @@ def _find_device_list(payload: Any) -> list[Mapping[str, Any]]:
         if nested:
             return nested
     return []
+
+
+def device_nodes_from_response(payload: Any) -> list[DeviceNode]:
+    """Extract controller nodes from the legacy member device response."""
+    nodes: list[DeviceNode] = []
+    seen: set[str] = set()
+    for item in _find_device_list(payload):
+        node_id = _first_text(item, "nodeId", "nodeID", "deviceTopic")
+        if not node_id or node_id in seen:
+            continue
+        seen.add(node_id)
+        nodes.append(
+            DeviceNode(
+                parent_id=_first_text(item, "parentId", "parentID") or "1",
+                node_id=node_id,
+                name=_first_text(item, "deviceAlias", "deviceName") or "멀티 매니저",
+            )
+        )
+    return nodes
+
+
+def legacy_room_devices_from_response(
+    payload: Any, node: DeviceNode
+) -> list[RoomDevice]:
+    """Extract rooms from a legacy getDeviceInfo response."""
+    if not isinstance(payload, Mapping):
+        return []
+
+    items: list[Mapping[str, Any]] = []
+    for key in (
+        "deviceSlaveInfo",
+        "detailItemList",
+        "deviceInfoList",
+        "eachRoomDeviceList",
+    ):
+        value = payload.get(key)
+        if isinstance(value, list):
+            items = [item for item in value if isinstance(item, Mapping)]
+            break
+    if not items:
+        for key in ("data", "result", "deviceInfo"):
+            rooms = legacy_room_devices_from_response(payload.get(key), node)
+            if rooms:
+                return rooms
+
+    devices: list[RoomDevice] = []
+    seen: set[str] = set()
+    for item in items:
+        raw_room_id = _first_text(
+            item, "slaveId", "slaveID", "eachRoomID", "eachRoomId"
+        )
+        if not raw_room_id:
+            continue
+        try:
+            room_id = normalize_room_id(raw_room_id)
+        except ValueError:
+            continue
+        if room_id in seen:
+            continue
+        seen.add(room_id)
+
+        room_name = _first_text(
+            item,
+            "alias",
+            "slaveAlias",
+            "roomName",
+            "eachRoomName",
+            "deviceName",
+        )
+        if not room_name:
+            room_name = f"{node.name} (각방 {room_id})"
+        devices.append(
+            RoomDevice(
+                parent_id=node.parent_id,
+                node_id=node.node_id,
+                room_id=room_id,
+                name=room_name,
+                device_name=node.name,
+            )
+        )
+    return devices
 
 
 def normalize_room_id(value: str) -> str:
