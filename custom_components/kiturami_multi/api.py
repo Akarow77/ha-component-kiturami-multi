@@ -47,6 +47,7 @@ class KrbClient:
         self._password = password
         self._session = session
         self.auth_key = ""
+        self.login_scheme = ""
 
     async def _request_once(
         self,
@@ -131,11 +132,11 @@ class KrbClient:
         return result
 
     async def async_login(self) -> str:
-        """Authenticate using the request fields used by Multi Manager."""
+        """Authenticate using current and legacy Multi Manager fields."""
         password_hash = hashlib.sha256(self._password.encode("utf-8")).hexdigest()
         # GsonBuilder.serializeNulls() is used by Multi Manager 2.8.4. Keep the
         # complete MemberModel shape so the request matches the app exactly.
-        payload = {
+        current_payload = {
             "appcode": None,
             "emailAddress": None,
             "memberRole": None,
@@ -147,34 +148,55 @@ class KrbClient:
             "userIdentifier": self.username,
             "userName": None,
         }
-        try:
-            result = await self._async_post(
-                "member/login",
-                payload,
-                authenticated=False,
-                retry_auth=False,
+        login_attempts = (
+            ("current", current_payload),
+            (
+                "legacy",
+                {"memberId": self.username, "password": password_hash},
+            ),
+        )
+        last_error = "아이디 또는 비밀번호를 확인하세요"
+
+        for scheme, payload in login_attempts:
+            try:
+                result = await self._async_post(
+                    "member/login",
+                    payload,
+                    authenticated=False,
+                    retry_auth=False,
+                )
+            except KrbConnectionError:
+                raise
+            except KrbError as ex:
+                last_error = str(ex)
+                continue
+
+            data = result.get("data")
+            nested = data if isinstance(data, dict) else {}
+            auth_key = (
+                result.get("authenticationKey")
+                or result.get("authKey")
+                or nested.get("authenticationKey")
+                or nested.get("authKey")
             )
-        except KrbConnectionError:
-            raise
-        except KrbError as ex:
-            raise KrbAuthError(str(ex)) from ex
-        auth_key = result.get("authenticationKey")
-        if not auth_key and isinstance(result.get("data"), dict):
-            auth_key = result["data"].get("authenticationKey")
-        if not auth_key:
-            message = (
+            if auth_key:
+                self.auth_key = str(auth_key)
+                self.login_scheme = scheme
+                _LOGGER.info("Kiturami login succeeded with %s API fields", scheme)
+                return self.auth_key
+
+            last_error = str(
                 result.get("responseMessage")
                 or result.get("errorMessage")
                 or result.get("message")
-                or "아이디 또는 비밀번호를 확인하세요"
+                or last_error
             )
-            _LOGGER.warning(
-                "Kiturami login response did not contain an authentication key: %s",
-                message,
-            )
-            raise KrbAuthError(str(message))
-        self.auth_key = str(auth_key)
-        return self.auth_key
+
+        _LOGGER.warning(
+            "Kiturami login did not return an authentication key: %s",
+            last_error,
+        )
+        raise KrbAuthError(last_error)
 
     async def async_get_room_devices(self) -> list[RoomDevice]:
         """Return all room controllers registered to the account."""

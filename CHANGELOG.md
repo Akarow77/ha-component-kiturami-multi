@@ -2,6 +2,10 @@
 
 이 프로젝트는 Semantic Versioning을 따릅니다.
 
+## 0.1.2
+
+- 멀티룸 API의 `memberId` 로그인 형식과 `authKey` 응답 형식 자동 호환
+
 ## 0.1.1
 
 - 멀티 매니저 2.8.4와 동일한 로그인 요청 본문 및 `AUTH-KEY` 헤더 사용
