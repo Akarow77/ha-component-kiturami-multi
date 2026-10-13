@@ -24,6 +24,23 @@ from .protocol import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _response_field_names(payload: Any) -> list[str]:
+    """Return response field names without logging account or device values."""
+    fields: set[str] = set()
+
+    def collect(value: Any) -> None:
+        if isinstance(value, dict):
+            fields.update(str(key) for key in value)
+            for nested in value.values():
+                collect(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                collect(nested)
+
+    collect(payload)
+    return sorted(fields)
+
+
 class KrbError(Exception):
     """Base exception for the Kiturami cloud API."""
 
@@ -218,13 +235,25 @@ class KrbClient:
             {"parentId": "1"},
         )
         nodes = device_nodes_from_response(member_result)
+        if not nodes:
+            _LOGGER.warning(
+                "Kiturami member device response contained no controller nodes; "
+                "fields=%s",
+                _response_field_names(member_result),
+            )
         legacy_devices: list[RoomDevice] = []
         for node in nodes:
             detail = await self._async_post(
                 "device/getDeviceInfo",
                 {"nodeId": node.node_id, "parentId": node.parent_id},
             )
-            legacy_devices.extend(legacy_room_devices_from_response(detail, node))
+            rooms = legacy_room_devices_from_response(detail, node)
+            if not rooms:
+                _LOGGER.warning(
+                    "Kiturami device response contained no rooms; fields=%s",
+                    _response_field_names(detail),
+                )
+            legacy_devices.extend(rooms)
         return legacy_devices
 
 

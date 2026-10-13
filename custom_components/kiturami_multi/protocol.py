@@ -35,6 +35,17 @@ def _first_text(source: Mapping[str, Any], *keys: str) -> str | None:
     return None
 
 
+def _walk_mappings(payload: Any):
+    """Yield every mapping in a nested API response."""
+    if isinstance(payload, Mapping):
+        yield payload
+        for value in payload.values():
+            yield from _walk_mappings(value)
+    elif isinstance(payload, list):
+        for value in payload:
+            yield from _walk_mappings(value)
+
+
 def _find_device_list(payload: Any) -> list[Mapping[str, Any]]:
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, Mapping)]
@@ -57,8 +68,15 @@ def device_nodes_from_response(payload: Any) -> list[DeviceNode]:
     """Extract controller nodes from the legacy member device response."""
     nodes: list[DeviceNode] = []
     seen: set[str] = set()
-    for item in _find_device_list(payload):
-        node_id = _first_text(item, "nodeId", "nodeID", "deviceTopic")
+    for item in _walk_mappings(payload):
+        node_id = _first_text(
+            item,
+            "nodeId",
+            "nodeID",
+            "deviceTopic",
+            "nodeTopic",
+            "topicID",
+        )
         if not node_id or node_id in seen:
             continue
         seen.add(node_id)
@@ -79,28 +97,17 @@ def legacy_room_devices_from_response(
     if not isinstance(payload, Mapping):
         return []
 
-    items: list[Mapping[str, Any]] = []
-    for key in (
-        "deviceSlaveInfo",
-        "detailItemList",
-        "deviceInfoList",
-        "eachRoomDeviceList",
-    ):
-        value = payload.get(key)
-        if isinstance(value, list):
-            items = [item for item in value if isinstance(item, Mapping)]
-            break
-    if not items:
-        for key in ("data", "result", "deviceInfo"):
-            rooms = legacy_room_devices_from_response(payload.get(key), node)
-            if rooms:
-                return rooms
-
     devices: list[RoomDevice] = []
     seen: set[str] = set()
-    for item in items:
+    for item in _walk_mappings(payload):
         raw_room_id = _first_text(
-            item, "slaveId", "slaveID", "eachRoomID", "eachRoomId"
+            item,
+            "slaveId",
+            "slaveID",
+            "eachRoomID",
+            "eachRoomId",
+            "roomId",
+            "roomID",
         )
         if not raw_room_id:
             continue
@@ -119,6 +126,7 @@ def legacy_room_devices_from_response(
             "roomName",
             "eachRoomName",
             "deviceName",
+            "deviceAlias",
         )
         if not room_name:
             room_name = f"{node.name} (각방 {room_id})"
@@ -147,9 +155,19 @@ def room_devices_from_response(payload: Any) -> list[RoomDevice]:
     devices: list[RoomDevice] = []
     seen: set[tuple[str, str]] = set()
 
-    for item in _find_device_list(payload):
-        node_id = _first_text(item, "deviceTopic", "nodeId", "nodeID")
-        raw_room_id = _first_text(item, "eachRoomID", "eachRoomId", "slaveId")
+    for item in _walk_mappings(payload):
+        node_id = _first_text(
+            item, "deviceTopic", "nodeId", "nodeID", "nodeTopic", "topicID"
+        )
+        raw_room_id = _first_text(
+            item,
+            "eachRoomID",
+            "eachRoomId",
+            "slaveId",
+            "slaveID",
+            "roomId",
+            "roomID",
+        )
         if not node_id or not raw_room_id:
             continue
 
